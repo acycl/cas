@@ -1,0 +1,4 @@
+github.com/acycl/weakmap v0.0.0-20251230004949-570d29415797 h1:tZog/qRMBXf1C2ko3I1ZdG6BkMZ/kQxjiEJvOdjvHvE=
+github.com/acycl/weakmap v0.0.0-20251230004949-570d29415797/go.mod h1:wRf98Yh8ODkQWvo3ZCgCNSJ3qfTJZVXdgRX52IxTKkE=
+golang.org/x/sync v0.19.0 h1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=
+golang.org/x/sync v0.19.0/go.mod h1:9KTHXmSnoGruLpwFjVSX0lNNA75CykiMECbovNTZqGI=
