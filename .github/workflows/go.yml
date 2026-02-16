@@ -1,0 +1,31 @@
+name: Go
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      matrix:
+        module:
+          - .
+          - ./gcs
+          - ./s3
+        go-version:
+          - '1.25'
+          - '1.26'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: setup-go
+        name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+      - name: Verify the Go module
+        working-directory: ${{ matrix.module }}
+        run: go mod tidy -diff
+      - name: Run all tests
+        working-directory: ${{ matrix.module }}
+        run: go test -race -v ./...
