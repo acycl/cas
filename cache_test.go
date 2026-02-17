@@ -421,16 +421,14 @@ func TestOpenConcurrency(t *testing.T) {
 		errs := make(chan error, goroutines)
 
 		for range goroutines {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				f, err := cache.Open(context.Background(), sum, "test://file.txt")
 				if err != nil {
 					errs <- err
 					return
 				}
 				f.Close()
-			}()
+			})
 		}
 
 		wg.Wait()
