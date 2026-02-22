@@ -39,7 +39,10 @@ cache := cas.New("/var/cache/files",
     cas.WithSource("gs", src),
 )
 
-f, _ := cache.Open(ctx, "ab12cd34...", "gs://bucket/file.txt")
+m, _ := cas.NewManifest(
+    cas.File("file.txt", "gs://bucket/file.txt", "ab12cd34..."),
+)
+f, _ := cache.Open(ctx, m, "file.txt")
 defer f.Close()
 data, _ := io.ReadAll(f)
 ```
@@ -55,24 +58,37 @@ cache := cas.New("/var/cache/files",
     cas.WithSource("s3", src),
 )
 
-f, _ := cache.Open(ctx, "ab12cd34...", "s3://bucket/file.txt")
+m, _ := cas.NewManifest(
+    cas.File("file.txt", "s3://bucket/file.txt", "ab12cd34..."),
+)
+f, _ := cache.Open(ctx, m, "file.txt")
 defer f.Close()
 data, _ := io.ReadAll(f)
 ```
 
 ### Manifest
 
-A `Manifest` maps names to cached files, allowing you to open files by name
-rather than by checksum:
+A `Manifest` is a standalone type that maps names to remote files. It has no
+dependency on a `Cache`, so it can be defined at package scope, loaded from
+configuration, or shared across cache instances:
 
 ```go
-manifest, _ := cache.Manifest(
+m, _ := cas.NewManifest(
     cas.File("model.bin", "gs://bucket/model.bin", "ab12cd34..."),
     cas.File("config.json", "s3://bucket/config.json", "ef56ab78..."),
 )
 
-f, _ := manifest.Open(ctx, "model.bin")
+f, _ := cache.Open(ctx, m, "model.bin")
 defer f.Close()
+```
+
+Use `Validate` to check at startup that all manifest URIs have registered
+sources, without downloading anything:
+
+```go
+if err := cache.Validate(m); err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Custom sources

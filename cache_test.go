@@ -105,7 +105,7 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func TestOpen(t *testing.T) {
+func TestCacheOpen(t *testing.T) {
 	t.Parallel()
 
 	t.Run("download and cache hit", func(t *testing.T) {
@@ -119,8 +119,13 @@ func TestOpen(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		// First open downloads the file.
-		f, err := cache.Open(context.Background(), sum, "test://file.txt")
+		f, err := cache.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +143,7 @@ func TestOpen(t *testing.T) {
 		}
 
 		// Second open returns the cached file without downloading.
-		f2, err := cache.Open(context.Background(), sum, "test://file.txt")
+		f2, err := cache.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,34 +154,16 @@ func TestOpen(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid checksum", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		cache := New(dir, WithSource("test", newMockSource(nil)))
-
-		cases := []struct {
-			name string
-			sum  string
-		}{
-			{"bad hex", "not-valid-hex!"},
-			{"wrong length", "abcd1234"},
-		}
-		for _, tt := range cases {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-				_, err := cache.Open(context.Background(), tt.sum, "test://file.txt")
-				if err == nil {
-					t.Fatal("expected error")
-				}
-			})
-		}
-	})
-
 	t.Run("unsupported scheme", func(t *testing.T) {
 		t.Parallel()
 		cache := New(t.TempDir())
 
-		_, err := cache.Open(context.Background(), sha256Hex(nil), "unknown://file.txt")
+		m, err := NewManifest(File("file.txt", "unknown://file.txt", sha256Hex(nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = cache.Open(context.Background(), m, "file.txt")
 		if !errors.Is(err, ErrUnsupportedScheme) {
 			t.Errorf("got %v, want ErrUnsupportedScheme", err)
 		}
@@ -197,7 +184,11 @@ func TestOpen(t *testing.T) {
 		for _, tt := range cases {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				_, err := cache.Open(context.Background(), sum, tt.uri)
+				m, err := NewManifest(File("f", tt.uri, sum))
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = cache.Open(context.Background(), m, "f")
 				if err == nil {
 					t.Fatal("expected error")
 				}
@@ -210,7 +201,12 @@ func TestOpen(t *testing.T) {
 		src := newMockSource(map[string][]byte{})
 		cache := New(t.TempDir(), WithSource("test", src))
 
-		_, err := cache.Open(context.Background(), sha256Hex(nil), "test://missing.txt")
+		m, err := NewManifest(File("missing.txt", "test://missing.txt", sha256Hex(nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = cache.Open(context.Background(), m, "missing.txt")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -227,7 +223,12 @@ func TestOpen(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
-		_, err := cache.Open(context.Background(), wrongSum, "test://file.txt")
+		m, err := NewManifest(File("file.txt", "test://file.txt", wrongSum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = cache.Open(context.Background(), m, "file.txt")
 
 		// Verify the error type and field values.
 		var checksumErr *ErrInvalidChecksum
@@ -269,7 +270,15 @@ func TestOpen(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
-		f, err := cache.Open(context.Background(), sum, "test://a.txt")
+		m, err := NewManifest(
+			File("a.txt", "test://a.txt", sum),
+			File("b.txt", "test://b.txt", sum),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f, err := cache.Open(context.Background(), m, "a.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +286,7 @@ func TestOpen(t *testing.T) {
 
 		// Same checksum with a different URI hits the cache without
 		// downloading. The source doesn't even have "test://b.txt".
-		f2, err := cache.Open(context.Background(), sum, "test://b.txt")
+		f2, err := cache.Open(context.Background(), m, "b.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,7 +315,12 @@ func TestOpen(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
-		f, err := cache.Open(context.Background(), sum, "test://file.txt")
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f, err := cache.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -334,7 +348,11 @@ func TestOpen(t *testing.T) {
 		})
 
 		cache1 := New(dir, WithSource("test", src))
-		f, err := cache1.Open(context.Background(), sum, "test://file.txt")
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := cache1.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -342,7 +360,7 @@ func TestOpen(t *testing.T) {
 
 		// A new instance with no sources should serve from the on-disk cache.
 		cache2 := New(dir)
-		f2, err := cache2.Open(context.Background(), sum, "test://file.txt")
+		f2, err := cache2.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -367,9 +385,17 @@ func TestOpen(t *testing.T) {
 		srcB := newMockSource(map[string][]byte{"beta://f": contentB})
 		cache := New(dir, WithSource("alpha", srcA), WithSource("beta", srcB))
 
+		m, err := NewManifest(
+			File("a", "alpha://f", sha256Hex(contentA)),
+			File("b", "beta://f", sha256Hex(contentB)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		ctx := context.Background()
 
-		fA, err := cache.Open(ctx, sha256Hex(contentA), "alpha://f")
+		fA, err := cache.Open(ctx, m, "a")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,7 +405,7 @@ func TestOpen(t *testing.T) {
 		}
 		fA.Close()
 
-		fB, err := cache.Open(ctx, sha256Hex(contentB), "beta://f")
+		fB, err := cache.Open(ctx, m, "b")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -402,7 +428,7 @@ func TestOpen(t *testing.T) {
 	})
 }
 
-func TestOpenConcurrency(t *testing.T) {
+func TestCacheOpenConcurrency(t *testing.T) {
 	t.Parallel()
 
 	t.Run("deduplicates same checksum", func(t *testing.T) {
@@ -416,13 +442,18 @@ func TestOpenConcurrency(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		const goroutines = 10
 		var wg sync.WaitGroup
 		errs := make(chan error, goroutines)
 
 		for range goroutines {
 			wg.Go(func() {
-				f, err := cache.Open(context.Background(), sum, "test://file.txt")
+				f, err := cache.Open(context.Background(), m, "file.txt")
 				if err != nil {
 					errs <- err
 					return
@@ -460,6 +491,14 @@ func TestOpenConcurrency(t *testing.T) {
 		}
 		cache := New(dir, WithSource("test", src))
 
+		m, err := NewManifest(
+			File("a.txt", "test://a.txt", sha256Hex(contentA)),
+			File("b.txt", "test://b.txt", sha256Hex(contentB)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		// Each download blocks until both have started. Serialized
 		// downloads would deadlock because the barrier never reaches zero.
 		done := make(chan struct{})
@@ -469,7 +508,7 @@ func TestOpenConcurrency(t *testing.T) {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				f, err := cache.Open(context.Background(), sha256Hex(contentA), "test://a.txt")
+				f, err := cache.Open(context.Background(), m, "a.txt")
 				if err != nil {
 					t.Errorf("file A: %v", err)
 					return
@@ -478,7 +517,7 @@ func TestOpenConcurrency(t *testing.T) {
 			}()
 			go func() {
 				defer wg.Done()
-				f, err := cache.Open(context.Background(), sha256Hex(contentB), "test://b.txt")
+				f, err := cache.Open(context.Background(), m, "b.txt")
 				if err != nil {
 					t.Errorf("file B: %v", err)
 					return
@@ -508,10 +547,15 @@ func TestOpenConcurrency(t *testing.T) {
 		}
 		cache := New(dir, WithSource("test", src))
 
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		// Start a download that blocks in the source.
 		downloadDone := make(chan error, 1)
 		go func() {
-			f, err := cache.Open(context.Background(), sum, "test://file.txt")
+			f, err := cache.Open(context.Background(), m, "file.txt")
 			if err == nil {
 				f.Close()
 			}
@@ -523,7 +567,7 @@ func TestOpenConcurrency(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		waiterDone := make(chan error, 1)
 		go func() {
-			_, err := cache.Open(ctx, sum, "test://file.txt")
+			_, err := cache.Open(ctx, m, "file.txt")
 			waiterDone <- err
 		}()
 
@@ -559,7 +603,7 @@ func TestOpenConcurrency(t *testing.T) {
 	})
 }
 
-func TestOpenRetry(t *testing.T) {
+func TestCacheOpenRetry(t *testing.T) {
 	t.Parallel()
 
 	t.Run("recovers from directory removal", func(t *testing.T) {
@@ -574,7 +618,12 @@ func TestOpenRetry(t *testing.T) {
 		}
 		cache := New(dir, WithSource("test", src))
 
-		f, err := cache.Open(context.Background(), sum, "test://file.txt")
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f, err := cache.Open(context.Background(), m, "file.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -602,14 +651,19 @@ func TestOpenRetry(t *testing.T) {
 		}
 		cache := New(dir, WithSource("test", src))
 
-		_, err := cache.Open(context.Background(), sum, "test://file.txt")
+		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = cache.Open(context.Background(), m, "file.txt")
 		if err == nil {
 			t.Fatal("expected error after retry exhaustion")
 		}
 	})
 }
 
-func TestManifest(t *testing.T) {
+func TestNewManifest(t *testing.T) {
 	t.Parallel()
 
 	t.Run("opens files by name", func(t *testing.T) {
@@ -624,7 +678,7 @@ func TestManifest(t *testing.T) {
 		})
 		cache := New(dir, WithSource("test", src))
 
-		manifest, err := cache.Manifest(
+		m, err := NewManifest(
 			File("a.txt", "test://a.txt", sha256Hex(contentA)),
 			File("b.txt", "test://b.txt", sha256Hex(contentB)),
 		)
@@ -634,7 +688,7 @@ func TestManifest(t *testing.T) {
 
 		ctx := context.Background()
 
-		f, err := manifest.Open(ctx, "a.txt")
+		f, err := cache.Open(ctx, m, "a.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -647,7 +701,7 @@ func TestManifest(t *testing.T) {
 			t.Errorf("a.txt content = %q, want %q", got, contentA)
 		}
 
-		f2, err := manifest.Open(ctx, "b.txt")
+		f2, err := cache.Open(ctx, m, "b.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -661,7 +715,7 @@ func TestManifest(t *testing.T) {
 		}
 
 		// Re-opening should use the cache.
-		f3, err := manifest.Open(ctx, "a.txt")
+		f3, err := cache.Open(ctx, m, "a.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -674,12 +728,13 @@ func TestManifest(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
-		manifest, err := New(t.TempDir()).Manifest()
+		m, err := NewManifest()
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		_, err = manifest.Open(context.Background(), "missing.txt")
+		cache := New(t.TempDir())
+		_, err = cache.Open(context.Background(), m, "missing.txt")
 		if err == nil {
 			t.Fatal("expected error for missing manifest entry")
 		}
@@ -687,7 +742,6 @@ func TestManifest(t *testing.T) {
 
 	t.Run("invalid checksum", func(t *testing.T) {
 		t.Parallel()
-		cache := New(t.TempDir())
 
 		cases := []struct {
 			name string
@@ -699,7 +753,7 @@ func TestManifest(t *testing.T) {
 		for _, tt := range cases {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				_, err := cache.Manifest(File("f", "test://f", tt.sum))
+				_, err := NewManifest(File("f", "test://f", tt.sum))
 				if err == nil {
 					t.Fatal("expected error")
 				}
@@ -718,7 +772,7 @@ func TestManifest(t *testing.T) {
 		cache := New(dir, WithSource("test", src))
 
 		sum := sha256Hex(content)
-		manifest, err := cache.Manifest(
+		m, err := NewManifest(
 			File("name1.txt", "test://file.txt", sum),
 			File("name2.txt", "test://file.txt", sum),
 		)
@@ -727,13 +781,13 @@ func TestManifest(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		f1, err := manifest.Open(ctx, "name1.txt")
+		f1, err := cache.Open(ctx, m, "name1.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
 		f1.Close()
 
-		f2, err := manifest.Open(ctx, "name2.txt")
+		f2, err := cache.Open(ctx, m, "name2.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -741,6 +795,87 @@ func TestManifest(t *testing.T) {
 
 		if src.downloads.Load() != 1 {
 			t.Errorf("downloads = %d, want 1", src.downloads.Load())
+		}
+	})
+}
+
+func TestCacheValidate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("all schemes registered", func(t *testing.T) {
+		t.Parallel()
+		cache := New(t.TempDir(),
+			WithSource("gs", newMockSource(nil)),
+			WithSource("s3", newMockSource(nil)),
+		)
+
+		m, err := NewManifest(
+			File("a", "gs://bucket/a", sha256Hex(nil)),
+			File("b", "s3://bucket/b", sha256Hex(nil)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := cache.Validate(m); err != nil {
+			t.Errorf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("unregistered scheme", func(t *testing.T) {
+		t.Parallel()
+		cache := New(t.TempDir(), WithSource("gs", newMockSource(nil)))
+
+		m, err := NewManifest(
+			File("a", "gs://bucket/a", sha256Hex(nil)),
+			File("b", "s3://bucket/b", sha256Hex(nil)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = cache.Validate(m)
+		if !errors.Is(err, ErrUnsupportedScheme) {
+			t.Errorf("Validate() = %v, want ErrUnsupportedScheme", err)
+		}
+	})
+
+	t.Run("empty manifest", func(t *testing.T) {
+		t.Parallel()
+		cache := New(t.TempDir())
+
+		m, err := NewManifest()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := cache.Validate(m); err != nil {
+			t.Errorf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("missing scheme in URI", func(t *testing.T) {
+		t.Parallel()
+		cache := New(t.TempDir(), WithSource("test", newMockSource(nil)))
+
+		cases := []struct {
+			name string
+			uri  string
+		}{
+			{"bare path", "file.txt"},
+			{"empty string", ""},
+		}
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				m, err := NewManifest(File("f", tt.uri, sha256Hex(nil)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := cache.Validate(m); err == nil {
+					t.Fatal("expected error")
+				}
+			})
 		}
 	})
 }
