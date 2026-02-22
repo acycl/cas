@@ -12,9 +12,11 @@
 //	cache := cas.New("/var/cache/files",
 //	    cas.WithSource("gs", src),
 //	)
-//	f, _ := cache.Open(ctx, "sha256hash...", "gs://bucket/file.txt")
+//	m, _ := cas.NewManifest(
+//	    cas.File("file.txt", "gs://bucket/file.txt", "sha256hash..."),
+//	)
+//	f, _ := cache.Open(ctx, m, "file.txt")
 //	defer f.Close()
-//	data, _ := io.ReadAll(f)
 package cas
 
 import (
@@ -41,9 +43,11 @@ const maxRetries = 3
 var errDirRemoved = errors.New("cache directory removed concurrently")
 
 // Cache manages a local cache of remote files, indexed by content hash.
-// It is safe for concurrent use. Concurrent requests for the same checksum
-// share a single download, and callers can cancel their wait via context
-// without affecting the in-progress download.
+// Use [Cache.Open] to retrieve files by manifest name, and [Cache.Validate]
+// to check that all manifest URIs have registered sources. It is safe for
+// concurrent use. Concurrent requests for the same checksum share a single
+// download, and callers can cancel their wait via context without affecting
+// the in-progress download.
 type Cache struct {
 	dir     string
 	sources map[string]Source
@@ -73,32 +77,30 @@ func (e entry) hexSum() string {
 	return hex.EncodeToString(e.sum[:])
 }
 
-// FileEntry describes a remote file by its name, URI, and expected
-// content hash. The checksum is validated when the entry is added
-// to a [Manifest].
-type FileEntry struct {
+// Entry describes a remote file by its name, URI, and expected content hash.
+// The checksum is validated when the entry is added to a [Manifest].
+type Entry struct {
 	name string
 	uri  string
 	sum  string
 }
 
-// File creates a [FileEntry] from a name, URI, and hex-encoded SHA-256
-// checksum.
-func File(name, uri, sum string) FileEntry {
-	return FileEntry{name: name, uri: uri, sum: sum}
+// File creates an [Entry] from a name, URI, and hex-encoded SHA-256 checksum.
+func File(name, uri, sum string) Entry {
+	return Entry{name: name, uri: uri, sum: sum}
 }
 
-// Manifest maps names to cached remote files.
+// Manifest maps logical file names to remote entries. It is a pure data type
+// with no dependency on a [Cache], so it can be defined at package scope,
+// loaded from configuration, or shared across cache instances.
 type Manifest struct {
-	cache   *Cache
 	entries map[string]entry
 }
 
-// Manifest creates a [Manifest] from the given file entries. It returns
+// NewManifest creates a [Manifest] from the given file entries. It returns
 // an error if any entry has an invalid checksum.
-func (c *Cache) Manifest(entries ...FileEntry) (*Manifest, error) {
+func NewManifest(entries ...Entry) (*Manifest, error) {
 	m := &Manifest{
-		cache:   c,
 		entries: make(map[string]entry, len(entries)),
 	}
 	for _, fe := range entries {
@@ -111,14 +113,34 @@ func (c *Cache) Manifest(entries ...FileEntry) (*Manifest, error) {
 	return m, nil
 }
 
-// Open returns a file handle for the cached file identified by name.
-// If the file is not in the cache, it is downloaded from the entry's URI.
-func (m *Manifest) Open(ctx context.Context, name string) (*os.File, error) {
+// Open returns a file handle for the cached file identified by name in the
+// given manifest. If the file is not in the cache, it is downloaded from the
+// entry's URI.
+func (c *Cache) Open(ctx context.Context, m *Manifest, name string) (*os.File, error) {
 	e, ok := m.entries[name]
 	if !ok {
 		return nil, fmt.Errorf("manifest entry not found: %q", name)
 	}
-	return m.cache.open(ctx, e)
+	return c.open(ctx, e)
+}
+
+// Validate checks that every URI in the manifest has a registered source.
+// It returns the first error found, wrapped with the file name. No downloads
+// are performed — this is intended as a startup-time configuration check.
+func (c *Cache) Validate(m *Manifest) error {
+	for name, e := range m.entries {
+		u, err := url.Parse(e.uri)
+		if err != nil {
+			return fmt.Errorf("file %q: parsing URI: %w", name, err)
+		}
+		if u.Scheme == "" {
+			return fmt.Errorf("file %q: missing scheme in URI: %q", name, e.uri)
+		}
+		if _, ok := c.sources[u.Scheme]; !ok {
+			return fmt.Errorf("file %q: %w: %q", name, ErrUnsupportedScheme, u.Scheme)
+		}
+	}
+	return nil
 }
 
 // New creates a new Cache that stores files in the specified directory.
@@ -143,30 +165,6 @@ func New(dir string, opts ...Option) *Cache {
 	}
 
 	return c
-}
-
-// Open returns a file handle for the cached file identified by the given
-// content hash. If the file is not in the cache, it is downloaded from
-// the specified URI.
-//
-// The sum must be a hex-encoded SHA-256 hash that matches the file's content.
-// The URI scheme determines which source is used (e.g., "gs://bucket/object").
-//
-// The checksum is verified after download. If the downloaded content does not
-// match the expected checksum, an [ErrInvalidChecksum] is returned and the file
-// is not cached.
-//
-// If multiple goroutines request the same sum concurrently, only one download
-// occurs. Waiting goroutines can cancel via context without affecting the
-// in-progress download.
-//
-// The caller must close the returned file when done.
-func (c *Cache) Open(ctx context.Context, sum, uri string) (*os.File, error) {
-	e, err := parseEntry(uri, sum)
-	if err != nil {
-		return nil, err
-	}
-	return c.open(ctx, e)
 }
 
 // open returns a file handle for the cached file, downloading it if necessary.
