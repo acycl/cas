@@ -3,7 +3,7 @@ module github.com/acycl/cas/s3
 go 1.25.0
 
 require (
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.0
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
 )
 
