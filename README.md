@@ -72,8 +72,7 @@ data, _ := io.ReadAll(f)
 ### HTTPS
 
 ```go
-client := https.NewClient()
-src := https.NewSource(client)
+src := https.NewSource()
 cache := cas.New("/var/cache/files", src)
 
 m, _ := cas.NewManifest(
