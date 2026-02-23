@@ -12,6 +12,9 @@ var ErrUnsupportedScheme = errors.New("unsupported URI scheme")
 
 // Source downloads files from a remote location.
 type Source interface {
+	// Scheme returns the URI scheme this source handles (e.g., "gs", "s3", "https").
+	Scheme() string
+
 	// Download writes the contents of the remote file at u to dst.
 	Download(ctx context.Context, dst *os.File, u *url.URL) error
 }

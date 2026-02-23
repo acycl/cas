@@ -9,9 +9,7 @@
 //	client, _ := storage.NewClient(ctx)
 //	d, _ := transfermanager.NewDownloader(client)
 //	src := gcs.NewSource(d)
-//	cache := cas.New("/var/cache/files",
-//	    cas.WithSource("gs", src),
-//	)
+//	cache := cas.New("/var/cache/files", src)
 //	m, _ := cas.NewManifest(
 //	    cas.File("file.txt", "gs://bucket/file.txt", "sha256hash..."),
 //	)
@@ -145,13 +143,17 @@ func (c *Cache) Validate(m *Manifest) error {
 
 // New creates a new Cache that stores files in the specified directory.
 // Cache subdirectories are created as needed when files are downloaded.
-//
-// Options can be provided to configure the cache:
-//   - WithSource: Register a source for a URI scheme (e.g., "gs" for GCS)
-func New(dir string, opts ...Option) *Cache {
-	c := &Cache{
+// Each source is registered under the URI scheme returned by its Scheme method.
+// If multiple sources share a scheme, the last one wins.
+func New(dir string, sources ...Source) *Cache {
+	m := make(map[string]Source, len(sources))
+	for _, s := range sources {
+		m[s.Scheme()] = s
+	}
+
+	return &Cache{
 		dir:     dir,
-		sources: make(map[string]Source),
+		sources: m,
 		sems: weakmap.Map[[sha256.Size]byte, chan struct{}]{
 			New: func([sha256.Size]byte) *chan struct{} {
 				sem := make(chan struct{}, 1)
@@ -159,12 +161,6 @@ func New(dir string, opts ...Option) *Cache {
 			},
 		},
 	}
-
-	for _, opt := range opts {
-		opt.apply(c)
-	}
-
-	return c
 }
 
 // open returns a file handle for the cached file, downloading it if necessary.

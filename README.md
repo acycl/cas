@@ -27,6 +27,13 @@ go get github.com/acycl/cas/gcs
 go get github.com/acycl/cas/s3
 ```
 
+The HTTPS source lives in the root module and requires no additional
+dependencies:
+
+```go
+import "github.com/acycl/cas/https"
+```
+
 ## Usage
 
 ### GCS
@@ -35,9 +42,7 @@ go get github.com/acycl/cas/s3
 client, _ := storage.NewClient(ctx)
 d, _ := transfermanager.NewDownloader(client)
 src := gcs.NewSource(d)
-cache := cas.New("/var/cache/files",
-    cas.WithSource("gs", src),
-)
+cache := cas.New("/var/cache/files", src)
 
 m, _ := cas.NewManifest(
     cas.File("file.txt", "gs://bucket/file.txt", "ab12cd34..."),
@@ -54,12 +59,25 @@ cfg, _ := config.LoadDefaultConfig(ctx)
 client := awss3.NewFromConfig(cfg)
 d := manager.NewDownloader(client)
 src := s3.NewSource(d)
-cache := cas.New("/var/cache/files",
-    cas.WithSource("s3", src),
-)
+cache := cas.New("/var/cache/files", src)
 
 m, _ := cas.NewManifest(
     cas.File("file.txt", "s3://bucket/file.txt", "ab12cd34..."),
+)
+f, _ := cache.Open(ctx, m, "file.txt")
+defer f.Close()
+data, _ := io.ReadAll(f)
+```
+
+### HTTPS
+
+```go
+client := https.NewClient()
+src := https.NewSource(client)
+cache := cas.New("/var/cache/files", src)
+
+m, _ := cas.NewManifest(
+    cas.File("file.txt", "https://example.com/file.txt", "ab12cd34..."),
 )
 f, _ := cache.Open(ctx, m, "file.txt")
 defer f.Close()
@@ -97,14 +115,13 @@ Implement the `Source` interface to add support for any protocol:
 
 ```go
 type Source interface {
+    Scheme() string
     Download(ctx context.Context, dst *os.File, u *url.URL) error
 }
 ```
 
-Register custom sources with `WithSource`:
+Pass custom sources directly to `New`:
 
 ```go
-cache := cas.New("/var/cache/files",
-    cas.WithSource("myproto", mySource),
-)
+cache := cas.New("/var/cache/files", mySource)
 ```

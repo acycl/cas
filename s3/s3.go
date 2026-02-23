@@ -22,6 +22,9 @@ func NewSource(d *manager.Downloader) *Source {
 	return &Source{downloader: d}
 }
 
+// Scheme returns "s3".
+func (s *Source) Scheme() string { return "s3" }
+
 // Download writes the contents of the S3 object at uri to dst.
 func (s *Source) Download(ctx context.Context, dst *os.File, u *url.URL) error {
 	bucket := u.Host

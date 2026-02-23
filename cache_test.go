@@ -19,13 +19,16 @@ import (
 // mockSource implements Source for testing. It serves data by URI and counts
 // downloads atomically.
 type mockSource struct {
+	scheme    string
 	data      map[string][]byte
 	downloads atomic.Int64
 }
 
-func newMockSource(files map[string][]byte) *mockSource {
-	return &mockSource{data: files}
+func newMockSource(scheme string, files map[string][]byte) *mockSource {
+	return &mockSource{scheme: scheme, data: files}
 }
+
+func (m *mockSource) Scheme() string { return m.scheme }
 
 func (m *mockSource) Download(_ context.Context, dst *os.File, u *url.URL) error {
 	m.downloads.Add(1)
@@ -40,10 +43,13 @@ func (m *mockSource) Download(_ context.Context, dst *os.File, u *url.URL) error
 // slowSource blocks until signaled, then writes data. Use started to
 // synchronize with the test and release to unblock the download.
 type slowSource struct {
+	scheme  string
 	data    []byte
 	started chan struct{}
 	release chan struct{}
 }
+
+func (s *slowSource) Scheme() string { return s.scheme }
 
 func (s *slowSource) Download(_ context.Context, dst *os.File, _ *url.URL) error {
 	close(s.started)
@@ -56,9 +62,12 @@ func (s *slowSource) Download(_ context.Context, dst *os.File, _ *url.URL) error
 // started. This proves downloads run concurrently: if they were serialized,
 // the barrier would never be satisfied and the test would deadlock.
 type barrierSource struct {
+	scheme  string
 	data    map[string][]byte
 	barrier *sync.WaitGroup
 }
+
+func (s *barrierSource) Scheme() string { return s.scheme }
 
 func (s *barrierSource) Download(_ context.Context, dst *os.File, u *url.URL) error {
 	s.barrier.Done()
@@ -76,11 +85,14 @@ func (s *barrierSource) Download(_ context.Context, dst *os.File, u *url.URL) er
 // allowing the retry to succeed. When true, every call removes the directory,
 // exhausting all retries.
 type dirRemovingSource struct {
+	scheme     string
 	data       []byte
 	cacheDir   string
 	persistent bool
 	once       sync.Once
 }
+
+func (s *dirRemovingSource) Scheme() string { return s.scheme }
 
 func (s *dirRemovingSource) Download(_ context.Context, dst *os.File, _ *url.URL) error {
 	if _, err := dst.WriteAt(s.data, 0); err != nil {
@@ -114,10 +126,10 @@ func TestCacheOpen(t *testing.T) {
 		content := []byte("hello, world")
 		sum := sha256Hex(content)
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -171,7 +183,7 @@ func TestCacheOpen(t *testing.T) {
 
 	t.Run("missing scheme", func(t *testing.T) {
 		t.Parallel()
-		cache := New(t.TempDir(), WithSource("test", newMockSource(nil)))
+		cache := New(t.TempDir(), newMockSource("test", nil))
 		sum := sha256Hex(nil)
 
 		cases := []struct {
@@ -198,8 +210,8 @@ func TestCacheOpen(t *testing.T) {
 
 	t.Run("source error", func(t *testing.T) {
 		t.Parallel()
-		src := newMockSource(map[string][]byte{})
-		cache := New(t.TempDir(), WithSource("test", src))
+		src := newMockSource("test", map[string][]byte{})
+		cache := New(t.TempDir(), src)
 
 		m, err := NewManifest(File("missing.txt", "test://missing.txt", sha256Hex(nil)))
 		if err != nil {
@@ -218,10 +230,10 @@ func TestCacheOpen(t *testing.T) {
 		content := []byte("actual content")
 		wrongSum := sha256Hex([]byte("different content"))
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", wrongSum))
 		if err != nil {
@@ -265,10 +277,10 @@ func TestCacheOpen(t *testing.T) {
 		sum := sha256Hex(content)
 
 		// Only register "test://a.txt" in the source.
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://a.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(
 			File("a.txt", "test://a.txt", sum),
@@ -310,10 +322,10 @@ func TestCacheOpen(t *testing.T) {
 		content := []byte("layout test content")
 		sum := sha256Hex(content)
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -343,11 +355,11 @@ func TestCacheOpen(t *testing.T) {
 		content := []byte("persistent content")
 		sum := sha256Hex(content)
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
 
-		cache1 := New(dir, WithSource("test", src))
+		cache1 := New(dir, src)
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
 			t.Fatal(err)
@@ -381,9 +393,9 @@ func TestCacheOpen(t *testing.T) {
 		contentA := []byte("from alpha")
 		contentB := []byte("from beta")
 
-		srcA := newMockSource(map[string][]byte{"alpha://f": contentA})
-		srcB := newMockSource(map[string][]byte{"beta://f": contentB})
-		cache := New(dir, WithSource("alpha", srcA), WithSource("beta", srcB))
+		srcA := newMockSource("alpha", map[string][]byte{"alpha://f": contentA})
+		srcB := newMockSource("beta", map[string][]byte{"beta://f": contentB})
+		cache := New(dir, srcA, srcB)
 
 		m, err := NewManifest(
 			File("a", "alpha://f", sha256Hex(contentA)),
@@ -437,10 +449,10 @@ func TestCacheOpenConcurrency(t *testing.T) {
 		content := []byte("shared content")
 		sum := sha256Hex(content)
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -483,13 +495,14 @@ func TestCacheOpenConcurrency(t *testing.T) {
 		barrier.Add(2)
 
 		src := &barrierSource{
+			scheme: "test",
 			data: map[string][]byte{
 				"test://a.txt": contentA,
 				"test://b.txt": contentB,
 			},
 			barrier: &barrier,
 		}
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(
 			File("a.txt", "test://a.txt", sha256Hex(contentA)),
@@ -541,11 +554,12 @@ func TestCacheOpenConcurrency(t *testing.T) {
 		sum := sha256Hex(content)
 
 		src := &slowSource{
+			scheme:  "test",
 			data:    content,
 			started: make(chan struct{}),
 			release: make(chan struct{}),
 		}
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -613,10 +627,11 @@ func TestCacheOpenRetry(t *testing.T) {
 		sum := sha256Hex(content)
 
 		src := &dirRemovingSource{
+			scheme:   "test",
 			data:     content,
 			cacheDir: dir,
 		}
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -645,11 +660,12 @@ func TestCacheOpenRetry(t *testing.T) {
 		sum := sha256Hex(content)
 
 		src := &dirRemovingSource{
+			scheme:     "test",
 			data:       content,
 			cacheDir:   dir,
 			persistent: true,
 		}
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(File("file.txt", "test://file.txt", sum))
 		if err != nil {
@@ -672,11 +688,11 @@ func TestNewManifest(t *testing.T) {
 		contentA := []byte("file a content")
 		contentB := []byte("file b content")
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://a.txt": contentA,
 			"test://b.txt": contentB,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		m, err := NewManifest(
 			File("a.txt", "test://a.txt", sha256Hex(contentA)),
@@ -766,10 +782,10 @@ func TestNewManifest(t *testing.T) {
 		dir := t.TempDir()
 		content := []byte("shared manifest content")
 
-		src := newMockSource(map[string][]byte{
+		src := newMockSource("test", map[string][]byte{
 			"test://file.txt": content,
 		})
-		cache := New(dir, WithSource("test", src))
+		cache := New(dir, src)
 
 		sum := sha256Hex(content)
 		m, err := NewManifest(
@@ -805,8 +821,8 @@ func TestCacheValidate(t *testing.T) {
 	t.Run("all schemes registered", func(t *testing.T) {
 		t.Parallel()
 		cache := New(t.TempDir(),
-			WithSource("gs", newMockSource(nil)),
-			WithSource("s3", newMockSource(nil)),
+			newMockSource("gs", nil),
+			newMockSource("s3", nil),
 		)
 
 		m, err := NewManifest(
@@ -824,7 +840,7 @@ func TestCacheValidate(t *testing.T) {
 
 	t.Run("unregistered scheme", func(t *testing.T) {
 		t.Parallel()
-		cache := New(t.TempDir(), WithSource("gs", newMockSource(nil)))
+		cache := New(t.TempDir(), newMockSource("gs", nil))
 
 		m, err := NewManifest(
 			File("a", "gs://bucket/a", sha256Hex(nil)),
@@ -856,7 +872,7 @@ func TestCacheValidate(t *testing.T) {
 
 	t.Run("missing scheme in URI", func(t *testing.T) {
 		t.Parallel()
-		cache := New(t.TempDir(), WithSource("test", newMockSource(nil)))
+		cache := New(t.TempDir(), newMockSource("test", nil))
 
 		cases := []struct {
 			name string

@@ -22,6 +22,9 @@ func NewSource(d *transfermanager.Downloader) *Source {
 	return &Source{downloader: d}
 }
 
+// Scheme returns "gs".
+func (s *Source) Scheme() string { return "gs" }
+
 // Download writes the contents of the GCS object at uri to dst.
 func (s *Source) Download(ctx context.Context, dst *os.File, u *url.URL) error {
 	bucket := u.Host
