@@ -12,14 +12,21 @@ import (
 	"cloud.google.com/go/storage/transfermanager"
 )
 
+// Option configures a [Source].
+type Option func(*Source)
+
 // Source downloads files from Google Cloud Storage using the transfer manager.
 type Source struct {
 	downloader *transfermanager.Downloader
 }
 
 // NewSource creates a new GCS source from a transfer manager downloader.
-func NewSource(d *transfermanager.Downloader) *Source {
-	return &Source{downloader: d}
+func NewSource(d *transfermanager.Downloader, opts ...Option) *Source {
+	s := &Source{downloader: d}
+	for _, fn := range opts {
+		fn(s)
+	}
+	return s
 }
 
 // Scheme returns "gs".

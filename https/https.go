@@ -11,17 +11,13 @@ import (
 )
 
 // Option configures a [Source].
-type Option func(*options)
-
-type options struct {
-	client *http.Client
-}
+type Option func(*Source)
 
 // WithClient sets the HTTP client used by the [Source].
 // If not provided, [NewSource] uses a default client that enforces
 // HTTPS-only redirects and a redirect limit of 10.
 func WithClient(c *http.Client) Option {
-	return func(o *options) { o.client = c }
+	return func(s *Source) { s.client = c }
 }
 
 // Source downloads files over HTTPS.
@@ -33,11 +29,11 @@ type Source struct {
 // By default the source uses an internal client that enforces HTTPS-only
 // redirects and a redirect limit of 10. Use [WithClient] to override.
 func NewSource(opts ...Option) *Source {
-	o := options{client: newClient()}
+	s := &Source{client: newClient()}
 	for _, fn := range opts {
-		fn(&o)
+		fn(s)
 	}
-	return &Source{client: o.client}
+	return s
 }
 
 // Scheme returns "https".
