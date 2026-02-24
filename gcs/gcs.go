@@ -12,8 +12,15 @@ import (
 	"cloud.google.com/go/storage/transfermanager"
 )
 
-// Option configures a [Source].
-type Option func(*Source)
+// Option configures a [Source]. The interface is sealed to prevent
+// external implementations; use the provided With* functions.
+type Option interface {
+	apply(*Source)
+}
+
+type optionFunc func(*Source)
+
+func (f optionFunc) apply(s *Source) { f(s) }
 
 // Source downloads files from Google Cloud Storage using the transfer manager.
 type Source struct {
@@ -23,8 +30,8 @@ type Source struct {
 // NewSource creates a new GCS source from a transfer manager downloader.
 func NewSource(d *transfermanager.Downloader, opts ...Option) *Source {
 	s := &Source{downloader: d}
-	for _, fn := range opts {
-		fn(s)
+	for _, o := range opts {
+		o.apply(s)
 	}
 	return s
 }

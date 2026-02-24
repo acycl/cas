@@ -10,14 +10,21 @@ import (
 	"os"
 )
 
-// Option configures a [Source].
-type Option func(*Source)
+// Option configures a [Source]. The interface is sealed to prevent
+// external implementations; use the provided With* functions.
+type Option interface {
+	apply(*Source)
+}
+
+type optionFunc func(*Source)
+
+func (f optionFunc) apply(s *Source) { f(s) }
 
 // WithClient sets the HTTP client used by the [Source].
 // If not provided, [NewSource] uses a default client that enforces
 // HTTPS-only redirects and a redirect limit of 10.
 func WithClient(c *http.Client) Option {
-	return func(s *Source) { s.client = c }
+	return optionFunc(func(s *Source) { s.client = c })
 }
 
 // Source downloads files over HTTPS.
@@ -30,8 +37,8 @@ type Source struct {
 // redirects and a redirect limit of 10. Use [WithClient] to override.
 func NewSource(opts ...Option) *Source {
 	s := &Source{client: newClient()}
-	for _, fn := range opts {
-		fn(s)
+	for _, o := range opts {
+		o.apply(s)
 	}
 	return s
 }

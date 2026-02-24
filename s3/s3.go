@@ -12,8 +12,15 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Option configures a [Source].
-type Option func(*Source)
+// Option configures a [Source]. The interface is sealed to prevent
+// external implementations; use the provided With* functions.
+type Option interface {
+	apply(*Source)
+}
+
+type optionFunc func(*Source)
+
+func (f optionFunc) apply(s *Source) { f(s) }
 
 // Source downloads files from Amazon S3 using the download manager.
 type Source struct {
@@ -23,8 +30,8 @@ type Source struct {
 // NewSource creates a new S3 source from a download manager.
 func NewSource(d *manager.Downloader, opts ...Option) *Source {
 	s := &Source{downloader: d}
-	for _, fn := range opts {
-		fn(s)
+	for _, o := range opts {
+		o.apply(s)
 	}
 	return s
 }
