@@ -26,22 +26,6 @@ jobs:
       - name: Run go vet
         working-directory: ${{ matrix.module }}
         run: go vet ./...
-  test:
-    strategy:
-      matrix:
-        module:
-          - .
-          - ./gcs
-          - ./s3
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - id: setup-go
-        name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: ${{ matrix.module }}/go.mod
-          check-latest: true
       - name: Run all tests
         working-directory: ${{ matrix.module }}
         run: go test -race -v ./...
